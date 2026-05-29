@@ -7,3 +7,4 @@ dist
 *.log
 .venv/
 backend/.venv/
+backend/.env.bak
