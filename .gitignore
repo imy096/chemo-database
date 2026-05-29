@@ -12,3 +12,4 @@ src/pages/AdminPanel.tsx
 src/pages/AdminCollaborationReview.tsx
 backend/api/admin.py
 backend/api/admin_collaboration.py
+public/assets/plant-images/raw/
