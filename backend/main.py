@@ -3,44 +3,18 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
+import requests
+import json
+import re
+import importlib
 
 # =========================
 # LOAD ENV
 # =========================
 PROJECT_ROOT = Path(__file__).resolve().parent
 load_dotenv(PROJECT_ROOT / ".env")
-
-# =========================
-# IMPORT API ROUTES
-# =========================
-from api import (
-    plants,
-    compounds,
-    genes,
-    pathways,
-    diseases,
-    search,
-    analytics,
-    graph,
-    signatures,
-    publications,
-    therapeutics,
-    collaboration,
-    targets,
-    submission_validation,
-    curation,
-)
-
-from api.graph import router as graph_router
-
-# =========================
-# OTHER IMPORTS
-# =========================
-from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
-import requests
-import json
-import re
 
 # =========================
 # FASTAPI APP
@@ -65,34 +39,59 @@ app.add_middleware(
 )
 
 # =========================
+# SAFE ROUTER LOADER
+# =========================
+def include_api_router(module_name: str, prefix: str, tags: List[str]) -> None:
+    """
+    Safely imports and includes an API router.
+    If the module/file does not exist, the app will continue running.
+    """
+    try:
+        module = importlib.import_module(f"api.{module_name}")
+
+        if hasattr(module, "router"):
+            app.include_router(
+                module.router,
+                prefix=prefix,
+                tags=tags,
+            )
+            print(f"Loaded router: api.{module_name}")
+        else:
+            print(f"Skipped api.{module_name}: no router found")
+
+    except ModuleNotFoundError as e:
+        # Skip only if the missing module is the route file itself
+        if e.name == f"api.{module_name}":
+            print(f"Skipped missing router: api.{module_name}")
+        else:
+            raise
+
+    except ImportError as e:
+        print(f"Skipped api.{module_name} because of import error: {e}")
+
+
+# =========================
 # ROUTERS
 # =========================
-app.include_router(plants.router, prefix="/api/plants", tags=["Plants"])
-app.include_router(compounds.router, prefix="/api/compounds", tags=["Compounds"])
-app.include_router(genes.router, prefix="/api/genes", tags=["Genes"])
-app.include_router(pathways.router, prefix="/api/pathways", tags=["Pathways"])
-app.include_router(diseases.router, prefix="/api/diseases", tags=["Diseases"])
-app.include_router(search.router, prefix="/api/search", tags=["Search"])
-app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
-app.include_router(graph.router, prefix="/api/graph", tags=["Knowledge Graph"])
-app.include_router(signatures.router, prefix="/api/signatures", tags=["Transcriptomic Signatures"])
-app.include_router(publications.router, prefix="/api/publications", tags=["Publications"])
-app.include_router(therapeutics.router, prefix="/api/therapeutics", tags=["Therapeutics"])
-app.include_router(collaboration.router, prefix="/api/collaboration", tags=["Collaboration"])
-app.include_router(graph_router, prefix="/api", tags=["Graph"])
-app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
+include_api_router("plants", "/api/plants", ["Plants"])
+include_api_router("compounds", "/api/compounds", ["Compounds"])
+include_api_router("genes", "/api/genes", ["Genes"])
+include_api_router("pathways", "/api/pathways", ["Pathways"])
+include_api_router("diseases", "/api/diseases", ["Diseases"])
+include_api_router("search", "/api/search", ["Search"])
 
-app.include_router(
-    curation.router,
-    prefix="/api/curation",
-    tags=["Curation"],
-)
-
-app.include_router(
-    submission_validation.router,
-    prefix="/api/submission-validation",
-    tags=["Submission Validation"],
-)
+# Optional routers. If files are missing, backend will not crash.
+include_api_router("admin", "/api/admin", ["Admin"])
+include_api_router("analytics", "/api/analytics", ["Analytics"])
+include_api_router("graph", "/api/graph", ["Knowledge Graph"])
+include_api_router("signatures", "/api/signatures", ["Transcriptomic Signatures"])
+include_api_router("publications", "/api/publications", ["Publications"])
+include_api_router("therapeutics", "/api/therapeutics", ["Therapeutics"])
+include_api_router("collaboration", "/api/collaboration", ["Collaboration"])
+include_api_router("admin_collaboration", "/api/admin-collaboration", ["Admin Collaboration"])
+include_api_router("targets", "/api/targets", ["Targets"])
+include_api_router("submission_validation", "/api/submission-validation", ["Submission Validation"])
+include_api_router("curation", "/api/curation", ["Curation"])
 
 # =========================
 # ROOT
