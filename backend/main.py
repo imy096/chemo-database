@@ -26,7 +26,6 @@ from api import (
     publications,
     therapeutics,
     collaboration,
-    admin_collaboration,
     targets,
     submission_validation,
     curation,
@@ -87,12 +86,6 @@ app.include_router(
     curation.router,
     prefix="/api/curation",
     tags=["Curation"],
-)
-
-app.include_router(
-    admin_collaboration.router,
-    prefix="/api/admin-collaboration",
-    tags=["Admin Collaboration"],
 )
 
 app.include_router(
