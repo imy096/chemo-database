@@ -1,12 +1,19 @@
+```python
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from api import curation
-from api.graph import router as graph_router
+# =========================
+# LOAD ENV
+# =========================
+PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / ".env")
 
+# =========================
+# IMPORT API ROUTES
+# =========================
 from api import (
     plants,
     compounds,
@@ -24,18 +31,23 @@ from api import (
     admin_collaboration,
     targets,
     submission_validation,
+    curation,
 )
 
+from api.graph import router as graph_router
+
+# =========================
+# OTHER IMPORTS
+# =========================
 from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
 import requests
-from openai import OpenAI
 import json
 import re
-from typing import Any, Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-load_dotenv(PROJECT_ROOT / ".env")
-
+# =========================
+# FASTAPI APP
+# =========================
 app = FastAPI(
     title="Algerian Chemogenomic Phytochemical Database API",
     description="API for the National Algerian Chemogenomic Phytochemical Database",
@@ -44,6 +56,9 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
+# =========================
+# CORS
+# =========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,6 +67,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================
+# ROUTERS
+# =========================
 app.include_router(plants.router, prefix="/api/plants", tags=["Plants"])
 app.include_router(compounds.router, prefix="/api/compounds", tags=["Compounds"])
 app.include_router(genes.router, prefix="/api/genes", tags=["Genes"])
@@ -86,17 +104,9 @@ app.include_router(
     tags=["Submission Validation"],
 )
 
-# -------------------------
-# HEALTH
-# -------------------------
-@app.get("/api/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": "Algerian Chemogenomic Database API",
-    }
-
-
+# =========================
+# ROOT
+# =========================
 @app.get("/")
 async def root():
     return {
@@ -105,14 +115,19 @@ async def root():
         "version": "1.0.0",
     }
 
+# =========================
+# HEALTH CHECK
+# =========================
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "Algerian Chemogenomic Database API",
+    }
 
 # =========================
-# SMART CHATBOT
+# CHATBOT
 # =========================
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = None
@@ -120,9 +135,9 @@ class ChatRequest(BaseModel):
 
 def _safe_get(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
     try:
-        r = requests.get(url, params=params, timeout=12)
-        r.raise_for_status()
-        return r.json()
+        response = requests.get(url, params=params, timeout=12)
+        response.raise_for_status()
+        return response.json()
     except Exception as e:
         return {
             "error": str(e),
@@ -133,14 +148,18 @@ def _safe_get(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
 
 def _clip(obj: Any, limit: int = 8000) -> str:
     text = json.dumps(obj, ensure_ascii=False, indent=2)
+
     if len(text) > limit:
         return text[:limit] + "\n... [truncated]"
+
     return text
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
     text = text.strip()
+
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+
     if not match:
         return {}
 
@@ -151,22 +170,21 @@ def _extract_json(text: str) -> Dict[str, Any]:
 
 
 @app.post("/api/chat")
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     return {
         "answer": "Chat system active.",
         "message": req.message,
     }
 
-
-# -------------------------
-# RUN
-# -------------------------
+# =========================
+# START SERVER
+# =========================
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
         "main:app",
-        host=os.getenv("API_HOST", "0.0.0.0"),
+        host="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
         reload=False,
     )
