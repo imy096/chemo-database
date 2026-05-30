@@ -40,7 +40,7 @@ def main():
         first_image = images[0]
 
         key = normalize_name(folder.name)
-        url = f"/assets/plant-images/raw/{folder.name}/{first_image.name}"
+        url = f"/assets/plant-images/optimized/{folder.name}/{first_image.name}"
 
         manifest[key] = url
 

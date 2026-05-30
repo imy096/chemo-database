@@ -164,7 +164,7 @@ function getPlantImageCandidates(plant?: PlantData | null) {
   for (const folder of folderCandidates) {
     for (const fileName of fileNames) {
       for (const ext of extensions) {
-        paths.push(`/assets/plant-images/raw/${folder}/${fileName}.${ext}`);
+        paths.push(`/assets/plant-images/optimized/${folder}/${fileName}.${ext}`);
       }
     }
   }
