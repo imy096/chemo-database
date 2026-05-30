@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from backend.database import get_db
+from database import get_db
 
 router = APIRouter()
 

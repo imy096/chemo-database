@@ -6,7 +6,7 @@ import os
 import uuid
 
 from supabase import create_client, Client
-from backend.database import get_db
+from database import get_db
 
 router = APIRouter()
 

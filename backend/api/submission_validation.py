@@ -5,7 +5,7 @@ import io
 import os
 from pathlib import Path
 
-from backend.database import get_db
+from database import get_db
 from supabase import create_client
 import openpyxl
 

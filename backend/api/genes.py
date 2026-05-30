@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from backend.database import get_db
+from database import get_db
 
 router = APIRouter()
 
