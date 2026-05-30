@@ -20,7 +20,6 @@ from api import (
     pathways,
     diseases,
     search,
-    admin,
     analytics,
     graph,
     signatures,
@@ -75,7 +74,6 @@ app.include_router(genes.router, prefix="/api/genes", tags=["Genes"])
 app.include_router(pathways.router, prefix="/api/pathways", tags=["Pathways"])
 app.include_router(diseases.router, prefix="/api/diseases", tags=["Diseases"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
-app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(graph.router, prefix="/api/graph", tags=["Knowledge Graph"])
 app.include_router(signatures.router, prefix="/api/signatures", tags=["Transcriptomic Signatures"])
@@ -187,4 +185,3 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", 8000)),
         reload=False,
     )
-
