@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "api:dev": "cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "api:dev": "uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000",
     "etl:load": "cd backend && python -m etl.orchestrator"
   },
   "dependencies": {
