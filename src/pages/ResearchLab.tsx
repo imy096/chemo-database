@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -59,6 +60,7 @@ type TargetListRow = {
 };
 
 type CompoundBasic = {
+  data_quality?: { identity_hold?: boolean; identity_hold_reason?: string | null };
   compound_id: string;
   compound_name_raw?: string | null;
   compound_name_normalized?: string | null;
@@ -157,7 +159,6 @@ async function fetchJson<T>(url: string): Promise<T> {
     clearTimeout(timeout);
   }
 }
-
 
 function scoreBand(score?: number | null): 'unknown' | 'low' | 'moderate' | 'high' {
   if (score == null) return 'unknown';
@@ -356,7 +357,7 @@ export default function ResearchLab() {
     queryKey: ['lab5-compounds-search', compoundQuery],
     queryFn: () =>
       fetchJson<ApiListResponse<CompoundListRow>>(
-        `http://127.0.0.1:8000/api/compounds?limit=20&skip=0${compoundQuery.trim() ? `&q=${encodeURIComponent(compoundQuery)}` : ''}`
+        `${API_BASE}/compounds?limit=20&skip=0${compoundQuery.trim() ? `&q=${encodeURIComponent(compoundQuery)}` : ''}`
       ),
   });
 
@@ -364,7 +365,7 @@ export default function ResearchLab() {
     queryKey: ['lab5-targets-search', targetQuery],
     queryFn: () =>
       fetchJson<ApiListResponse<TargetListRow>>(
-        `http://127.0.0.1:8000/api/targets?limit=20&skip=0${targetQuery.trim() ? `&q=${encodeURIComponent(targetQuery)}` : ''}`
+        `${API_BASE}/targets?limit=20&skip=0${targetQuery.trim() ? `&q=${encodeURIComponent(targetQuery)}` : ''}`
       ),
   });
 
@@ -372,43 +373,43 @@ export default function ResearchLab() {
     queryKey: ['lab5-plants-search', plantQuery],
     queryFn: () =>
       fetchJson<ApiListResponse<PlantListRow>>(
-        `http://127.0.0.1:8000/api/plants?limit=20&skip=0${plantQuery.trim() ? `&q=${encodeURIComponent(plantQuery)}` : ''}`
+        `${API_BASE}/plants?limit=20&skip=0${plantQuery.trim() ? `&q=${encodeURIComponent(plantQuery)}` : ''}`
       ),
   });
 
   const { data: compoundDetail } = useQuery<CompoundBasic>({
     queryKey: ['lab5-compound-detail', selectedCompoundId],
-    queryFn: () => fetchJson<CompoundBasic>(`http://127.0.0.1:8000/api/compounds/${encodeURIComponent(selectedCompoundId)}`),
+    queryFn: () => fetchJson<CompoundBasic>(`${API_BASE}/compounds/${encodeURIComponent(selectedCompoundId)}`),
     enabled: !!selectedCompoundId,
   });
 
   const { data: chemblData } = useQuery<ApiListResponse<ChemblRow>>({
     queryKey: ['lab5-compound-chembl', selectedCompoundId],
-    queryFn: () => fetchJson<ApiListResponse<ChemblRow>>(`http://127.0.0.1:8000/api/compounds/${encodeURIComponent(selectedCompoundId)}/chembl`),
+    queryFn: () => fetchJson<ApiListResponse<ChemblRow>>(`${API_BASE}/compounds/${encodeURIComponent(selectedCompoundId)}/chembl`),
     enabled: !!selectedCompoundId,
   });
 
   const { data: stitchTargetsData } = useQuery<ApiListResponse<StitchTargetRow>>({
     queryKey: ['lab5-compound-targets', selectedCompoundId],
-    queryFn: () => fetchJson<ApiListResponse<StitchTargetRow>>(`http://127.0.0.1:8000/api/compounds/${encodeURIComponent(selectedCompoundId)}/targets`),
+    queryFn: () => fetchJson<ApiListResponse<StitchTargetRow>>(`${API_BASE}/compounds/${encodeURIComponent(selectedCompoundId)}/targets`),
     enabled: !!selectedCompoundId,
   });
 
   const { data: geoData } = useQuery<ApiListResponse<any>>({
     queryKey: ['lab5-compound-geo', selectedCompoundId],
-    queryFn: () => fetchJson<ApiListResponse<any>>(`http://127.0.0.1:8000/api/compounds/${encodeURIComponent(selectedCompoundId)}/geo`),
+    queryFn: () => fetchJson<ApiListResponse<any>>(`${API_BASE}/compounds/${encodeURIComponent(selectedCompoundId)}/geo`),
     enabled: !!selectedCompoundId,
   });
 
   const { data: lincsData } = useQuery<ApiListResponse<any>>({
     queryKey: ['lab5-compound-lincs', selectedCompoundId],
-    queryFn: () => fetchJson<ApiListResponse<any>>(`http://127.0.0.1:8000/api/compounds/${encodeURIComponent(selectedCompoundId)}/lincs`),
+    queryFn: () => fetchJson<ApiListResponse<any>>(`${API_BASE}/compounds/${encodeURIComponent(selectedCompoundId)}/lincs`),
     enabled: !!selectedCompoundId,
   });
 
   const { data: targetDetail } = useQuery<TargetDetailResponse>({
     queryKey: ['lab5-target-detail', selectedTargetKey],
-    queryFn: () => fetchJson<TargetDetailResponse>(`http://127.0.0.1:8000/api/targets/${encodeURIComponent(selectedTargetKey)}`),
+    queryFn: () => fetchJson<TargetDetailResponse>(`${API_BASE}/targets/${encodeURIComponent(selectedTargetKey)}`),
     enabled: !!selectedTargetKey,
   });
 
@@ -419,6 +420,8 @@ export default function ResearchLab() {
   const stitchRows = stitchTargetsData?.data || [];
   const geoRows = geoData?.data || [];
   const lincsRows = lincsData?.data || [];
+
+  const identityHold = !!compoundDetail?.data_quality?.identity_hold;
 
   const meaningfulChemblRows = useMemo(() => {
     return chemblRows.filter(
@@ -433,6 +436,7 @@ export default function ResearchLab() {
   }, [chemblRows]);
 
   const rankedTargets = useMemo<RankedTarget[]>(() => {
+    if (identityHold) return [];
     const map = new Map<string, RankedTarget>();
 
     stitchRows.forEach((row) => {
@@ -470,33 +474,10 @@ export default function ResearchLab() {
         gapFlags.push('Interaction action is missing');
       }
 
-      if (meaningfulChemblRows.length > 0) {
-        explainabilityScore += 2;
-        reasons.push('Compound has ChEMBL bioactivity support');
-      } else {
-        gapFlags.push('No ChEMBL bioactivity support loaded for this compound');
-      }
-
-      if (lincsRows.length > 0) {
-        explainabilityScore += 1;
-        reasons.push('Compound has LINCS-linked evidence');
-      } else {
-        gapFlags.push('No LINCS evidence loaded for this compound');
-      }
-
-      if (geoRows.length > 0) {
-        explainabilityScore += 1;
-        reasons.push('Compound has GEO-linked evidence');
-      } else {
-        gapFlags.push('No GEO evidence loaded for this compound');
-      }
-
-      let concordance: 'strong' | 'mixed' | 'weak' = 'weak';
-      if ((band === 'high' || band === 'moderate') && meaningfulChemblRows.length > 0 && (lincsRows.length > 0 || geoRows.length > 0)) {
-        concordance = 'strong';
-      } else if ((band === 'high' || band === 'moderate') && (meaningfulChemblRows.length > 0 || lincsRows.length > 0 || geoRows.length > 0)) {
-        concordance = 'mixed';
-      }
+      // Compound-level rows do not establish evidence for this specific target.
+      // No validated ChEMBL/STITCH target crosswalk is installed in this release.
+      gapFlags.push('Independent evidence has not been matched to this target and organism');
+      const concordance: 'strong' | 'mixed' | 'weak' = 'weak';
 
       const current = map.get(key);
       if (!current || (row.score ?? 0) > (current.score ?? 0)) {
@@ -523,7 +504,7 @@ export default function ResearchLab() {
         a.label.localeCompare(b.label)
       );
     });
-  }, [stitchRows, meaningfulChemblRows.length, lincsRows.length, geoRows.length]);
+  }, [stitchRows, identityHold]);
 
   const selectedCompoundName =
     compoundDetail?.compound_name_raw ||
@@ -573,8 +554,10 @@ export default function ResearchLab() {
       compoundDetail.compound_name_normalized ||
       compoundDetail.compound_id;
 
+    if (identityHold) return 'Hypothesis generation is withheld while this compound identity is under review.';
+
     if (selectedTargetKey && activeTargetSummary) {
-      return `${compoundName} may influence ${activeTargetSummary.display_name} through a compound-target relationship supported by interaction evidence, with additional context from linked bioactivity and transcriptomic evidence where available.`;
+      return `Inspect whether ${compoundName} is linked to ${activeTargetSummary.display_name}. Selecting both records does not establish an interaction; verify identity, organism, assay, and target mappings first.`;
     }
 
     if (rankedTargets.length > 0) {
@@ -583,7 +566,7 @@ export default function ResearchLab() {
     }
 
     return `${compoundName} is currently selected, but no ranked target hypothesis could yet be generated from the loaded evidence.`;
-  }, [compoundDetail, selectedTargetKey, activeTargetSummary, rankedTargets]);
+  }, [compoundDetail, selectedTargetKey, activeTargetSummary, rankedTargets, identityHold]);
 
   const nextStepSuggestions = useMemo(() => {
     if (!compoundDetail) {
@@ -828,6 +811,8 @@ export default function ResearchLab() {
                 <Pill tone="violet">{startMode}</Pill>
               </div>
 
+              {identityHold && <p role="alert" className="mt-4 rounded-xl bg-amber-50 p-4 text-amber-900">Compound identity is under review. Target ranking and generated hypotheses are withheld. {compoundDetail?.data_quality?.identity_hold_reason}</p>}
+              <p className="mt-3 text-sm text-stone-600">Rankings are exploratory source-confidence heuristics. Compound-level ChEMBL, LINCS, and GEO records have not been validated against individual targets and do not increase a target score.</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <Pill tone="violet">{activeWorkspaceName}</Pill>
                 {compoundDetail?.pubchem_cid ? <Pill>PubChem {compoundDetail.pubchem_cid}</Pill> : null}
