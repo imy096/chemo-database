@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-from database import get_supabase_client
+from backend.database import get_supabase_client
 from config import get_settings
 from graph.neo4j_builder import Neo4jGraphBuilder
 import logging
