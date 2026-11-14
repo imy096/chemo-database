@@ -1,24 +1,45 @@
-from fastapi import FastAPI
+# Support Render's existing `backend` root and local package imports.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from backend.api import curation
+from backend.auth import require_curator
+
+from backend.api import (
+    plants,
+    compounds,
+    genes,
+    pathways,
+    diseases,
+    search,
+    admin,
+    analytics,
+    graph,
+    signatures,
+    publications,
+    therapeutics,
+    collaboration,
+    admin_collaboration,
+    targets,
+    submission_validation,
+)
+
 from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
 import requests
+from openai import OpenAI
 import json
 import re
-import importlib
+from typing import Any, Dict, List, Optional
 
-# =========================
-# LOAD ENV
-# =========================
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-# =========================
-# FASTAPI APP
-# =========================
 app = FastAPI(
     title="Algerian Chemogenomic Phytochemical Database API",
     description="API for the National Algerian Chemogenomic Phytochemical Database",
@@ -27,75 +48,61 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
-# =========================
-# CORS
-# =========================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[origin.strip() for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,https://algerian-chemo-database.netlify.app",
+    ).split(",") if origin.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =========================
-# SAFE ROUTER LOADER
-# =========================
-def include_api_router(module_name: str, prefix: str, tags: List[str]) -> None:
-    """
-    Safely imports and includes an API router.
-    If the module/file does not exist, the app will continue running.
-    """
-    try:
-        module = importlib.import_module(f"api.{module_name}")
+app.include_router(plants.router, prefix="/api/plants", tags=["Plants"])
+app.include_router(compounds.router, prefix="/api/compounds", tags=["Compounds"])
+app.include_router(genes.router, prefix="/api/genes", tags=["Genes"])
+app.include_router(pathways.router, prefix="/api/pathways", tags=["Pathways"])
+app.include_router(diseases.router, prefix="/api/diseases", tags=["Diseases"])
+app.include_router(search.router, prefix="/api/search", tags=["Search"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"], dependencies=[Depends(require_curator)])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(graph.router, prefix="/api", tags=["Knowledge Graph"])
+app.include_router(signatures.router, prefix="/api/signatures", tags=["Transcriptomic Signatures"])
+app.include_router(publications.router, prefix="/api/publications", tags=["Publications"])
+app.include_router(therapeutics.router, prefix="/api/therapeutics", tags=["Therapeutics"])
+app.include_router(collaboration.router, prefix="/api/collaboration", tags=["Collaboration"])
+app.include_router(targets.router, prefix="/api/targets", tags=["Targets"])
+app.include_router(
+    curation.router,
+    prefix="/api/curation",
+    tags=["Curation"],
+    dependencies=[Depends(require_curator)],
+)
+app.include_router(
+    admin_collaboration.router,
+    prefix="/api/admin-collaboration",
+    tags=["Admin Collaboration"],
+    dependencies=[Depends(require_curator)],
+)
+app.include_router(
+    submission_validation.router,
+    prefix="/api/submission-validation",
+    tags=["Submission Validation"],
+    dependencies=[Depends(require_curator)],
+)
 
-        if hasattr(module, "router"):
-            app.include_router(
-                module.router,
-                prefix=prefix,
-                tags=tags,
-            )
-            print(f"Loaded router: api.{module_name}")
-        else:
-            print(f"Skipped api.{module_name}: no router found")
-
-    except ModuleNotFoundError as e:
-        # Skip only if the missing module is the route file itself
-        if e.name == f"api.{module_name}":
-            print(f"Skipped missing router: api.{module_name}")
-        else:
-            raise
-
-    except ImportError as e:
-        print(f"Skipped api.{module_name} because of import error: {e}")
+# -------------------------
+# HEALTH
+# -------------------------
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "Algerian Chemogenomic Database API",
+    }
 
 
-# =========================
-# ROUTERS
-# =========================
-include_api_router("plants", "/api/plants", ["Plants"])
-include_api_router("compounds", "/api/compounds", ["Compounds"])
-include_api_router("genes", "/api/genes", ["Genes"])
-include_api_router("pathways", "/api/pathways", ["Pathways"])
-include_api_router("diseases", "/api/diseases", ["Diseases"])
-include_api_router("search", "/api/search", ["Search"])
-
-# Optional routers. If files are missing, backend will not crash.
-include_api_router("admin", "/api/admin", ["Admin"])
-include_api_router("analytics", "/api/analytics", ["Analytics"])
-include_api_router("graph", "/api/graph", ["Knowledge Graph"])
-include_api_router("signatures", "/api/signatures", ["Transcriptomic Signatures"])
-include_api_router("publications", "/api/publications", ["Publications"])
-include_api_router("therapeutics", "/api/therapeutics", ["Therapeutics"])
-include_api_router("collaboration", "/api/collaboration", ["Collaboration"])
-include_api_router("admin_collaboration", "/api/admin-collaboration", ["Admin Collaboration"])
-include_api_router("targets", "/api/targets", ["Targets"])
-include_api_router("submission_validation", "/api/submission-validation", ["Submission Validation"])
-include_api_router("curation", "/api/curation", ["Curation"])
-
-# =========================
-# ROOT
-# =========================
 @app.get("/")
 async def root():
     return {
@@ -104,19 +111,18 @@ async def root():
         "version": "1.0.0",
     }
 
-# =========================
-# HEALTH CHECK
-# =========================
-@app.get("/api/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "service": "Algerian Chemogenomic Database API",
-    }
 
 # =========================
-# CHATBOT
+# 🤖 SMART CHATBOT
 # =========================
+
+def get_chat_client() -> OpenAI:
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise HTTPException(status_code=503, detail="The research assistant is not configured.")
+    return OpenAI(api_key=key)
+
+
 class ChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = None
@@ -124,9 +130,9 @@ class ChatRequest(BaseModel):
 
 def _safe_get(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
     try:
-        response = requests.get(url, params=params, timeout=12)
-        response.raise_for_status()
-        return response.json()
+        r = requests.get(url, params=params, timeout=12)
+        r.raise_for_status()
+        return r.json()
     except Exception as e:
         return {
             "error": str(e),
@@ -137,43 +143,258 @@ def _safe_get(url: str, params: Optional[Dict[str, Any]] = None) -> Any:
 
 def _clip(obj: Any, limit: int = 8000) -> str:
     text = json.dumps(obj, ensure_ascii=False, indent=2)
-
     if len(text) > limit:
         return text[:limit] + "\n... [truncated]"
-
     return text
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
     text = text.strip()
-
     match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-
     if not match:
         return {}
-
     try:
         return json.loads(match.group(0))
     except Exception:
         return {}
 
 
-@app.post("/api/chat")
-async def chat(req: ChatRequest):
-    return {
-        "answer": "Chat system active.",
-        "message": req.message,
+def _planner(message: str) -> Dict[str, Any]:
+    planning_prompt = f"""
+You are an intent planner for a scientific portal assistant.
+Return ONLY valid JSON with this exact schema:
+
+{{
+  "intent": "overview|compound_lookup|target_lookup|plant_lookup|navigation|explanation|unknown",
+  "entity_type": "compound|target|plant|none",
+  "query": "short search phrase or empty string",
+  "needs_multiple": true
+}}
+
+Rules:
+- If the user is asking about a compound or molecule, entity_type = compound.
+- If the user is asking about a target or gene, entity_type = target.
+- If the user is asking about a plant, entity_type = plant.
+- If the user asks how to use the portal or what data exists, use explanation or navigation.
+- "query" should contain the likely entity name if present.
+- "needs_multiple" should be true only when the user asks for a list, examples, or broad overview.
+
+User message:
+{message}
+"""
+    try:
+        resp = get_chat_client().chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": planning_prompt},
+            ],
+        )
+        raw = resp.choices[0].message.content or "{}"
+        parsed = _extract_json(raw)
+        return {
+            "intent": parsed.get("intent", "unknown"),
+            "entity_type": parsed.get("entity_type", "none"),
+            "query": parsed.get("query", ""),
+            "needs_multiple": bool(parsed.get("needs_multiple", False)),
+        }
+    except Exception:
+        return {
+            "intent": "unknown",
+            "entity_type": "none",
+            "query": "",
+            "needs_multiple": False,
+        }
+
+
+def _fetch_context(plan: Dict[str, Any]) -> Dict[str, Any]:
+    base = os.getenv("INTERNAL_API_BASE_URL", f"http://127.0.0.1:{os.getenv('API_PORT', os.getenv('PORT', '8000'))}").rstrip("/")
+    intent = plan.get("intent", "unknown")
+    entity_type = plan.get("entity_type", "none")
+    query = (plan.get("query") or "").strip()
+    needs_multiple = plan.get("needs_multiple", False)
+
+    context: Dict[str, Any] = {
+        "plan": plan,
+        "sources": {},
     }
 
-# =========================
-# START SERVER
-# =========================
+    if intent == "explanation":
+        context["sources"]["portal_overview"] = {
+            "available_modules": [
+                "plants",
+                "compounds",
+                "targets",
+                "signatures",
+                "publications",
+                "graph",
+                "lab",
+                "data access",
+            ],
+            "core_evidence_types": [
+                "plant-compound associations",
+                "compound metadata",
+                "ChEMBL bioactivity",
+                "LINCS evidence",
+                "GEO-linked evidence",
+                "graph-ready relationships",
+            ],
+        }
+        return context
+
+    if entity_type == "compound":
+        params = {"limit": 5, "skip": 0}
+        if query:
+            params["q"] = query
+        listing = _safe_get(f"{base}/api/compounds", params=params)
+        context["sources"]["compound_search"] = listing
+
+        rows = listing.get("data", []) if isinstance(listing, dict) else []
+        if rows:
+            chosen = rows[0]
+            compound_id = chosen.get("compound_id")
+            context["chosen_compound"] = chosen
+
+            context["sources"]["compound_detail"] = _safe_get(
+                f"{base}/api/compounds/{compound_id}"
+            )
+            context["sources"]["compound_chembl"] = _safe_get(
+                f"{base}/api/compounds/{compound_id}/chembl"
+            )
+            context["sources"]["compound_targets"] = _safe_get(
+                f"{base}/api/compounds/{compound_id}/targets"
+            )
+            context["sources"]["compound_lincs"] = _safe_get(
+                f"{base}/api/compounds/{compound_id}/lincs"
+            )
+            context["sources"]["compound_geo"] = _safe_get(
+                f"{base}/api/compounds/{compound_id}/geo"
+            )
+
+    elif entity_type == "target":
+        params = {"limit": 5, "skip": 0}
+        if query:
+            params["q"] = query
+        listing = _safe_get(f"{base}/api/targets", params=params)
+        context["sources"]["target_search"] = listing
+
+        rows = listing.get("data", []) if isinstance(listing, dict) else []
+        if rows:
+            chosen = rows[0]
+            target_key = chosen.get("target_key")
+            context["chosen_target"] = chosen
+            context["sources"]["target_detail"] = _safe_get(
+                f"{base}/api/targets/{target_key}"
+            )
+
+    elif entity_type == "plant":
+        params = {"limit": 5, "skip": 0}
+        if query:
+            params["q"] = query
+        listing = _safe_get(f"{base}/api/plants", params=params)
+        context["sources"]["plant_search"] = listing
+
+        rows = listing.get("data", []) if isinstance(listing, dict) else []
+        if rows:
+            chosen = rows[0]
+            plant_id = chosen.get("plant_id")
+            context["chosen_plant"] = chosen
+            context["sources"]["plant_detail"] = _safe_get(
+                f"{base}/api/plants/{plant_id}"
+            )
+
+    elif intent in {"overview", "navigation", "unknown"} or needs_multiple:
+        context["sources"]["compounds"] = _safe_get(
+            f"{base}/api/compounds", params={"limit": 5, "skip": 0}
+        )
+        context["sources"]["targets"] = _safe_get(
+            f"{base}/api/targets", params={"limit": 5, "skip": 0}
+        )
+        context["sources"]["plants"] = _safe_get(
+            f"{base}/api/plants", params={"limit": 5, "skip": 0}
+        )
+
+    return context
+
+
+@app.post("/api/chat")
+def chat(req: ChatRequest):
+    client = get_chat_client()
+    plan = _planner(req.message)
+    context = _fetch_context(plan)
+
+    answer_prompt = f"""
+You are the AI Research Assistant for the Algerian Chemogenomic Phytochemical Portal.
+
+Your role:
+- answer clearly, helpfully, and scientifically
+- stay grounded in the provided portal data
+- do not invent unavailable facts
+- if data is missing, say so plainly
+- give short navigation advice when useful
+- do not duplicate the Lab page's deep matrix analysis
+- instead provide quick interpretation, quick summary, and portal guidance
+
+Preferred answer structure:
+1. Direct answer
+2. What portal data supports it
+3. Suggested next page or action, if useful
+
+User question:
+{req.message}
+
+Structured portal context:
+{_clip(context, 12000)}
+"""
+
+    history_messages: List[Dict[str, str]] = []
+    if req.history:
+        for item in req.history[-6:]:
+            role = item.get("role", "user")
+            content = item.get("content", "")
+            if role in {"user", "assistant"} and content:
+                history_messages.append({"role": role, "content": content})
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a grounded scientific portal assistant. Never fabricate portal data.",
+        },
+        *history_messages,
+        {
+            "role": "user",
+            "content": answer_prompt,
+        },
+    ]
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.3,
+        messages=messages,
+    )
+
+    answer = response.choices[0].message.content or "I could not generate a response."
+
+    return {
+        "answer": answer,
+        "plan": plan,
+        "context_preview": {
+            "keys": list(context.keys()),
+            "source_keys": list(context.get("sources", {}).keys()),
+        },
+    }
+
+
+# -------------------------
+# RUN
+# -------------------------
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", 8000)),
-        reload=False,
+        "backend.main:app",
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", 8000)),
+        reload=True,
     )
