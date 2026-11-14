@@ -19,19 +19,21 @@ type StatsResponse = {
   gene?: number;
   publication?: number;
   literature_refs?: number;
+  target?: number;
+  reference_records?: number;
 };
 
 export default function Home() {
-  const { data: stats } = useQuery<StatsResponse>({
+  const { data: stats, isError } = useQuery<StatsResponse>({
     queryKey: ['stats'],
     queryFn: api.analytics.stats,
   });
 
   const statItems = [
-    { label: 'Medicinal Plants', value: stats?.plant_taxon || 878, sublabel: 'Curated Algerian flora', icon: Leaf },
-    { label: 'Phytochemicals', value: stats?.compound || 5850, sublabel: 'Chemical identifiers', icon: FlaskConical },
-    { label: 'Molecular Targets', value: stats?.gene || 3240, sublabel: 'Biological evidence', icon: Target },
-    { label: 'Publications', value: stats?.publication || stats?.literature_refs || 1260, sublabel: 'Scientific sources', icon: FileText },
+    { label: 'Medicinal Plants', value: stats?.plant_taxon ?? '—', sublabel: 'Curated Algerian flora', icon: Leaf },
+    { label: 'Phytochemicals', value: stats?.compound ?? '—', sublabel: 'Chemical identifiers', icon: FlaskConical },
+    { label: 'Molecular Targets', value: stats?.target ?? '—', sublabel: 'Biological evidence', icon: Target },
+    { label: 'Reference records', value: stats?.reference_records ?? '—', sublabel: 'Stored source records', icon: FileText },
   ];
 
   return (
@@ -163,6 +165,7 @@ export default function Home() {
         </div>
       </section>
 
+      {isError && <p role="alert" className="mt-5 rounded-xl bg-amber-50 p-4 text-amber-900">Database counts could not be loaded. Refresh to retry.</p>}
       <section className="mt-12">
         <div className="mb-6">
           <h3 className="text-4xl font-bold tracking-tight text-[#153f35]">
@@ -178,7 +181,7 @@ export default function Home() {
           <FeatureCard
             to="/plants"
             title="Plants"
-            value={`${stats?.plant_taxon || 878} Plants`}
+            value={`${stats?.plant_taxon ?? '—'} Plants`}
             description="Browse Algerian medicinal flora with linked compounds, taxonomy, and scientific context."
             image="https://images.pexels.com/photos/4503267/pexels-photo-4503267.jpeg?auto=compress&cs=tinysrgb&w=1200"
             icon={Leaf}
@@ -188,7 +191,7 @@ export default function Home() {
           <FeatureCard
             to="/compounds"
             title="Compounds"
-            value={`${stats?.compound || 5850} Compounds`}
+            value={`${stats?.compound ?? '—'} Compounds`}
             description="Explore phytochemicals, molecular identifiers, linked evidence, and chemical descriptors."
             image="https://images.pexels.com/photos/2280571/pexels-photo-2280571.jpeg?auto=compress&cs=tinysrgb&w=1200"
             icon={FlaskConical}
