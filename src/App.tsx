@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import Layout from './components/Layout';
+import CuratorAccess from './components/CuratorAccess';
 
 const Home = lazy(() => import('./pages/Home'));
 const Explore = lazy(() => import('./pages/Explore'));
@@ -29,6 +30,7 @@ const Collaborate = lazy(() => import('./pages/Collaborate'));
 const AdminCollaborationReview = lazy(() => import('./pages/AdminCollaborationReview'));
 const ResearchLab = lazy(() => import('./pages/ResearchLab'));
 const DataAccess = lazy(() => import('./pages/DataAccess'));
+const SearchResults = lazy(() => import('./pages/SearchResults'));
 const ChatAssistant = lazy(() => import('./pages/ChatAssistant'));
 
 const queryClient = new QueryClient({
@@ -115,6 +117,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
+            <Route path="search" element={<SafePage><SearchResults /></SafePage>} />
             <Route
               index
               element={
@@ -335,7 +338,7 @@ export default function App() {
               path="admin"
               element={
                 <SafePage>
-                  <AdminPanel />
+                  <CuratorAccess><AdminPanel /></CuratorAccess>
                 </SafePage>
               }
             />
@@ -344,7 +347,7 @@ export default function App() {
               path="admin-collaboration-review"
               element={
                 <SafePage>
-                  <AdminCollaborationReview />
+                  <CuratorAccess><AdminCollaborationReview /></CuratorAccess>
                 </SafePage>
               }
             />

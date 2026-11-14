@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, Dict, Any
-from database import get_db
+from backend.database import get_db
+from backend.query_helpers import fetch_all, literal_search
 
 router = APIRouter()
 
@@ -47,19 +48,15 @@ def set_if_missing(obj: Dict[str, Any], key: str, value: Any):
 
 
 def safe_select_one(db, table_name: str, compound_id: str):
-    try:
-        res = db.table(table_name).select("*").eq("compound_id", compound_id).execute()
-        return first_or_none(res.data)
-    except Exception:
-        return None
+    result = db.table(table_name).select("*").eq("compound_id", compound_id).limit(2).execute()
+    rows = result.data or []
+    if len(rows) > 1:
+        raise HTTPException(status_code=503, detail=f"{table_name} returned duplicate compound records; review the view join.")
+    return first_or_none(rows)
 
 
 def safe_select_many(db, table_name: str, compound_id: str):
-    try:
-        res = db.table(table_name).select("*").eq("compound_id", compound_id).execute()
-        return safe(res.data)
-    except Exception:
-        return []
+    return fetch_all(lambda: db.table(table_name).select("*", count="exact").eq("compound_id", compound_id).order("compound_id"))
 
 
 def clean_text(value):
@@ -79,62 +76,9 @@ def normalize_id(value):
 
 
 def robust_select_by_compound_id(db, table_name: str, compound_id: str):
-    """
-    Robust lookup for imported tables.
-
-    It tries exact match, case-insensitive match, contains match, then a paged scan
-    with normalized Python comparison. This helps when Supabase CSV import creates
-    hidden whitespace/encoding characters or when exact REST equality fails.
-    """
-    clean_id = clean_text(compound_id)
-    wanted = normalize_id(compound_id)
-
-    # 1. Exact match
-    result = (
-        db.table(table_name)
-        .select("*")
-        .eq("compound_id", clean_id)
-        .execute()
-    )
-    rows = result.data or []
-    if rows:
-        return rows
-
-    # 2. Case-insensitive exact match
-    result = (
-        db.table(table_name)
-        .select("*")
-        .ilike("compound_id", clean_id)
-        .execute()
-    )
-    rows = result.data or []
-    if rows:
-        return rows
-
-    # 3. Case-insensitive contains match
-    result = (
-        db.table(table_name)
-        .select("*")
-        .ilike("compound_id", f"%{clean_id}%")
-        .execute()
-    )
-    rows = result.data or []
-    if rows:
-        return rows
-
-    # 4. Scan fallback, up to 10,000 rows
-    result = (
-        db.table(table_name)
-        .select("*")
-        .range(0, 9999)
-        .execute()
-    )
-    rows = result.data or []
-
-    return [
-        row for row in rows
-        if normalize_id(row.get("compound_id")) == wanted
-    ]
+    # Catalogue IDs are identifiers, not search phrases. Fuzzy/contains
+    # matching can attach another molecule's structures or activity.
+    return safe_select_many(db, table_name, clean_text(compound_id))
 
 
 def merge_master(compound: Dict[str, Any], row: Dict[str, Any]):
@@ -215,76 +159,15 @@ def merge_comptox(compound: Dict[str, Any], row: Dict[str, Any]):
 
 
 def build_compound_detail(db, compound_id: str) -> Dict[str, Any]:
-    compound = empty_compound(compound_id)
-    found_any = False
-
-    master_row = safe_select_one(db, "v_compound_master", compound_id)
-    if master_row:
-        merge_master(compound, master_row)
-        found_any = True
-
-    pubchem_row = safe_select_one(db, "v_compound_pubchem", compound_id)
-    if pubchem_row:
-        merge_pubchem(compound, pubchem_row)
-        found_any = True
-
-    kegg_row = safe_select_one(db, "v_compound_kegg", compound_id)
-    if kegg_row:
-        merge_kegg(compound, kegg_row)
-        found_any = True
-
-    comptox_row = safe_select_one(db, "v_compound_comptox", compound_id)
-    if comptox_row:
-        merge_comptox(compound, comptox_row)
-        found_any = True
-
-    chembl_rows = safe_select_many(db, "v_compound_chembl", compound_id)
-    if chembl_rows:
-        first = chembl_rows[0]
-        set_if_missing(compound, "compound_name_raw", first.get("compound_name_raw"))
-        set_if_missing(compound, "compound_name_normalized", first.get("compound_name_raw"))
-        chembl_ids = sorted(
-            {
-                row.get("molecule_chembl_id")
-                for row in chembl_rows
-                if row.get("molecule_chembl_id")
-            }
-        )
-        if chembl_ids:
-            set_if_missing(compound, "chembl_ids", ", ".join(chembl_ids))
-        found_any = True
-
-    lincs_rows = safe_select_many(db, "v_compound_lincs", compound_id)
-    if lincs_rows:
-        first = lincs_rows[0]
-        set_if_missing(compound, "compound_name_raw", first.get("compound_name_raw"))
-        set_if_missing(compound, "compound_name_normalized", first.get("compound_name_raw"))
-        found_any = True
-
-    geo_rows = safe_select_many(db, "v_compound_geo", compound_id)
-    if geo_rows:
-        first = geo_rows[0]
-        set_if_missing(compound, "compound_name_raw", first.get("compound_name_raw"))
-        set_if_missing(compound, "compound_name_normalized", first.get("compound_name_raw"))
-        found_any = True
-
-    toxicity_rows = safe_select_many(db, "v_compound_toxicity", compound_id)
-    if toxicity_rows:
-        first = toxicity_rows[0]
-        set_if_missing(compound, "compound_name_raw", first.get("compound_name_raw"))
-        set_if_missing(compound, "compound_name_normalized", first.get("compound_name_raw"))
-        found_any = True
-
-    target_rows = safe_select_many(db, "v_compound_target", compound_id)
-    if target_rows:
-        first = target_rows[0]
-        set_if_missing(compound, "compound_name_raw", first.get("compound_name_raw"))
-        set_if_missing(compound, "compound_name_normalized", first.get("compound_name_raw"))
-        found_any = True
-
-    if not found_any:
+    core = safe_select_one(db, "compound", compound_id)
+    if core is None:
         raise HTTPException(status_code=404, detail="Compound not found")
-
+    compound = empty_compound(compound_id)
+    merge_master(compound, core)
+    master = safe_select_one(db, "v_compound_master", compound_id)
+    if master:
+        merge_master(compound, master)
+    compound["data_quality"] = safe_select_one(db, "v_compound_annotation_status", compound_id)
     compound["plants"] = safe_select_many(db, "v_plant_compound", compound_id)
     return compound
 
@@ -300,11 +183,12 @@ async def get_compounds(
     db = get_db()
 
     try:
-        query = db.table("v_compound_master").select("*")
+        query = db.table("v_compound_master").select("*", count="exact")
 
         if q:
+            value = literal_search(q)
             query = query.or_(
-                f"compound_name_raw.ilike.%{q}%,compound_name_normalized.ilike.%{q}%,iupac_name.ilike.%{q}%,compound_id.ilike.%{q}%"
+                f"compound_name_raw.ilike.{value},compound_name_normalized.ilike.{value},iupac_name.ilike.{value},compound_id.ilike.{value}"
             )
 
         if min_mw is not None:
@@ -313,11 +197,18 @@ async def get_compounds(
         if max_mw is not None:
             query = query.lte("molecular_weight", max_mw)
 
-        result = query.range(skip, skip + limit - 1).execute()
+        result = query.order("compound_id").range(skip, skip + limit - 1).execute()
 
+        items = result.data or []
+        if items:
+            quality = db.table("v_compound_annotation_status").select("*").in_("compound_id", [row["compound_id"] for row in items]).execute()
+            quality_by_id = {row["compound_id"]: row for row in (quality.data or [])}
+            for row in items:
+                row["data_quality"] = quality_by_id.get(row["compound_id"])
         return {
-            "data": safe(result.data),
-            "count": len(result.data or []),
+            "data": items,
+            "count": len(items),
+            "total_count": result.count,
             "skip": skip,
             "limit": limit,
         }
@@ -358,7 +249,15 @@ async def get_pubchem(compound_id: str):
 async def get_chembl(compound_id: str):
     db = get_db()
     try:
-        return {"data": safe_select_many(db, "v_compound_chembl", compound_id)}
+        rows = safe_select_many(db, "v_compound_chembl", compound_id)
+        source = db.table("compound_chembl_activity").select("compound_id", count="exact", head=True).eq("compound_id", compound_id).execute()
+        return {"data": rows, "quality_summary": {
+            "source_rows": source.count,
+            "displayed_rows": len(rows),
+            "withheld_rows": max(source.count - len(rows), 0) if source.count is not None else None,
+            "evidence_status": "format_checked_source_unverified",
+            "note": "Shifted fields, unresolved parent links and active identity holds are excluded from this view; raw source records are preserved.",
+        }}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch ChEMBL data: {str(e)}")
 
@@ -421,7 +320,7 @@ async def get_targets(compound_id: str):
 async def get_comptox_properties(compound_id: str):
     db = get_db()
     try:
-        return {"data": safe_select_many(db, "v_compound_compotox_propteryt", compound_id)}
+        return {"data": safe_select_many(db, "v_compound_comptox_property", compound_id)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch CompTox properties: {str(e)}")
 
@@ -548,6 +447,9 @@ async def debug_nmr_data(compound_id: str):
 async def get_structure_files(compound_id: str):
     db = get_db()
     try:
+        quality = safe_select_one(db, "v_compound_annotation_status", compound_id) or {}
+        if quality.get("identity_hold") or (quality.get("pubchem_candidate_count") or 0) > 1:
+            return {"data": [], "status": "withheld_identity_review", "message": "Structure downloads are withheld until the compound identity is resolved."}
         rows = robust_select_by_compound_id(
             db,
             "compound_structure_files",

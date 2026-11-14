@@ -39,7 +39,7 @@ export default function Publications() {
         <div className="grid md:grid-cols-4 gap-6">
           <div className="card bg-gradient-to-br from-teal-50 to-teal-100/50 border-teal-200">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-primary-900">Total Publications</h3>
+              <h3 className="font-semibold text-primary-900">Reference records</h3>
               <BookOpen className="w-6 h-6 text-teal-600" />
             </div>
             <div className="text-3xl font-bold text-teal-700">{stats.total_publications || 0}</div>

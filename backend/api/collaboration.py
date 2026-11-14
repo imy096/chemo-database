@@ -6,7 +6,7 @@ import os
 import uuid
 
 from supabase import create_client, Client
-from database import get_db
+from backend.database import get_db
 
 router = APIRouter()
 
@@ -19,14 +19,8 @@ class CollaborationSubmission(BaseModel):
     message: str
 
 
-def get_storage_client() -> Client:
-    supabase_url = os.getenv("SUPABASE_URL")
-    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not supabase_url or not service_role_key:
-        raise RuntimeError("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
-
-    return create_client(supabase_url, service_role_key)
+def get_storage_client():
+    return get_db()
 
 
 @router.post("/submit")
@@ -50,6 +44,8 @@ async def submit_collaboration(payload: CollaborationSubmission):
             "data": result.data[0] if result.data else None,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -67,7 +63,8 @@ async def upload_collaboration_file(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }
 
-        if file.content_type not in allowed_types:
+        extension = os.path.splitext(file.filename or "")[1].lower()
+        if file.content_type not in allowed_types or extension not in {".csv", ".xls", ".xlsx", ".pdf"}:
             raise HTTPException(
                 status_code=400,
                 detail="Only CSV, XLS, XLSX, and PDF files are allowed.",
@@ -82,12 +79,18 @@ async def upload_collaboration_file(
         if not submission_check.data:
             raise HTTPException(status_code=404, detail="Submission not found.")
 
-        file_bytes = await file.read()
+        max_size = 10 * 1024 * 1024
+        file_bytes = await file.read(max_size + 1)
+        if len(file_bytes) > max_size:
+            raise HTTPException(413, "The upload exceeds the 10 MB limit.")
+        if not file_bytes:
+            raise HTTPException(422, "The uploaded file is empty.")
         file_size = len(file_bytes)
 
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         random_id = uuid.uuid4().hex[:8]
-        safe_name = file.filename.replace(" ", "_")
+        import re
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", (file.filename or "upload").replace("\\", "/").split("/")[-1])
         storage_path = f"{submission_id}/{timestamp}_{random_id}_{safe_name}"
 
         supabase = get_storage_client()
@@ -112,5 +115,7 @@ async def upload_collaboration_file(
             "data": result.data[0] if result.data else None,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

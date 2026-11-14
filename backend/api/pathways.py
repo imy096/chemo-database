@@ -1,58 +1,23 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
-from database import get_db
-
-router = APIRouter()
+from fastapi import APIRouter, HTTPException
+router=APIRouter()
+NOTE='A standalone curated pathway catalogue is not installed in this data release. Compound-level KEGG annotations remain available on compound records.'
 
 @router.get("/")
-async def get_pathways(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    source_db: Optional[str] = None
-):
-    db = get_db()
+def list_records():
+    return {"data":[],"available":False,"note":NOTE}
 
-    query = db.table("pathway").select("*")
+@router.get("/{record_id}")
+def get_record(record_id:str):
+    raise HTTPException(404,NOTE)
 
-    if source_db:
-        query = query.eq("source_db", source_db)
+@router.get("/{record_id}/compounds")
+def get_compounds(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}
 
-    result = query.range(skip, skip + limit - 1).execute()
+@router.get("/{record_id}/plants")
+def get_plants(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}
 
-    return {
-        "data": result.data,
-        "count": len(result.data),
-        "skip": skip,
-        "limit": limit
-    }
-
-@router.get("/{pathway_id}")
-async def get_pathway_detail(pathway_id: str):
-    db = get_db()
-
-    result = db.table("pathway").select("*").eq("pathway_id", pathway_id).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Pathway not found")
-
-    return result.data[0]
-
-@router.get("/{pathway_id}/compounds")
-async def get_pathway_compounds(pathway_id: str):
-    db = get_db()
-
-    result = db.table("compound_pathway").select(
-        "*, compound(*, compound_synonym(*))"
-    ).eq("pathway_id", pathway_id).execute()
-
-    return {"data": result.data}
-
-@router.get("/{pathway_id}/genes")
-async def get_pathway_genes(pathway_id: str):
-    db = get_db()
-
-    result = db.table("gene_pathway").select(
-        "*, gene(*)"
-    ).eq("pathway_id", pathway_id).execute()
-
-    return {"data": result.data}
+@router.get("/{record_id}/genes")
+def get_genes(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}

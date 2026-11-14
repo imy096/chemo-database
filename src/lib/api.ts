@@ -1,4 +1,10 @@
-const API_BASE = 'https://chemo-database.onrender.com/api';
+import { getAccessToken } from './auth';
+
+// Vite's development proxy handles /api locally. Production can use either
+// a same-origin reverse proxy or an explicitly configured HTTPS backend.
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'https://chemo-database.onrender.com/api').replace(/\/$/, '');
+
+export { fetchAPI };
 
 type QueryParams = Record<string, string | number | boolean | null | undefined>;
 
@@ -8,18 +14,16 @@ async function fetchAPI<T = any>(endpoint: string, options?: RequestInit): Promi
 
   try {
     const isFormData = options?.body instanceof FormData;
+    const token = /^\/(admin(?:\/|-)|curation\/|submission-validation\/)/.test(endpoint)
+      ? await getAccessToken() : null;
+    const headers = new Headers(options?.headers);
+    if (!isFormData) headers.set('Content-Type', 'application/json');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       signal: controller.signal,
-      headers: isFormData
-        ? {
-            ...(options?.headers || {}),
-          }
-        : {
-            'Content-Type': 'application/json',
-            ...(options?.headers || {}),
-          },
+      headers,
     });
 
     if (!response.ok) {
@@ -27,6 +31,9 @@ async function fetchAPI<T = any>(endpoint: string, options?: RequestInit): Promi
       throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
+    if (!(response.headers.get('content-type') || '').includes('application/json')) {
+      throw new Error('The API returned a page instead of JSON. Check the backend URL or reverse proxy.');
+    }
     return response.json();
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -57,6 +64,8 @@ function toQueryString(params?: QueryParams) {
 }
 
 export const api = {
+  chat: (data: { message: string; history?: { role: string; content: string }[] }) =>
+    fetchAPI<{ answer: string }>('/chat', { method: 'POST', body: JSON.stringify(data) }),
   plants: {
     list: (params?: QueryParams) => {
       const query = toQueryString(params);
@@ -68,7 +77,7 @@ export const api = {
     pathways: (id: string) => fetchAPI(`/plants/${id}/pathways`),
     traditionalUses: (id: string) => fetchAPI(`/plants/${id}/traditional_uses`),
     evidence: (id: string) => fetchAPI(`/plants/${id}/evidence`),
-    genusContext: (id: string) => fetchAPI(`/plants/${id}/genus-context`),
+    genusContext: (id: string) => fetchAPI(`/plants/${encodeURIComponent(id)}/genus-context`),
   },
 
   therapeutics: {
@@ -188,10 +197,11 @@ export const api = {
     toxicity: (id: string) => fetchAPI(`/compounds/${id}/toxicity`),
     targets: (id: string) => fetchAPI(`/compounds/${id}/targets`),
     npClassification: (id: string) => fetchAPI(`/compounds/${id}/np-classification`),
-    metaboliteContext: (id: string) => fetchAPI(`/compounds/${id}/metabolite-context`),
     nmr: (id: string) => fetchAPI(`/compounds/${id}/nmr`),
     comptoxProperties: (id: string) =>
       fetchAPI(`/compounds/${id}/comptox-properties`),
+    metaboliteContext: (id: string) =>
+      fetchAPI(`/compounds/${encodeURIComponent(id)}/metabolite-context`),
   },
 
   targets: {
@@ -351,7 +361,8 @@ export const api = {
 
   publications: {
     list: (params?: QueryParams) => {
-      const query = toQueryString(params);
+      const { yearFrom, yearTo, ...rest } = params || {};
+      const query = toQueryString({ ...rest, year_from: yearFrom, year_to: yearTo });
       return fetchAPI(`/publications${query ? `?${query}` : ''}`);
     },
     getById: (id: string) => fetchAPI(`/publications/${id}`),

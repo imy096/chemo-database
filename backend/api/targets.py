@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from database import get_db
+from backend.database import get_db
+from backend.query_helpers import fetch_all, literal_search
 
 router = APIRouter()
 
@@ -23,9 +24,9 @@ async def get_targets(
         )
 
         if q:
-            safe_q = q.replace(",", " ").strip()
+            safe_q = literal_search(q)
             query = query.or_(
-                f"display_name.ilike.%{safe_q}%,gene_name.ilike.%{safe_q}%,target_external_id.ilike.%{safe_q}%"
+                f"display_name.ilike.{safe_q},gene_name.ilike.{safe_q},target_external_id.ilike.{safe_q}"
             )
 
         if status in {"named", "unresolved"}:
@@ -75,10 +76,10 @@ async def get_target_detail(target_key: str):
             )
         )
 
-        if gene_name:
-            compounds_result = compounds_query.eq("gene_name", gene_name).execute()
-        else:
-            compounds_result = compounds_query.eq("target_external_id", target_external_id).execute()
+        def source_query():
+            query = db.table("compound_target_interaction").select("*", count="exact").order("interaction_id")
+            return query.eq("gene_name", gene_name) if gene_name else query.eq("target_external_id", target_external_id)
+        compound_links = fetch_all(source_query)
 
         lincs_result = (
             db.table("lincs_signature_long")
@@ -90,7 +91,7 @@ async def get_target_detail(target_key: str):
 
         return {
             "summary": summary,
-            "compound_links": compounds_result.data or [],
+            "compound_links": compound_links,
             "lincs_rows": lincs_result.data or [],
         }
 

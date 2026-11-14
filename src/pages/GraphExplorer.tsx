@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -80,10 +81,10 @@ export default function GraphExplorer() {
     : ['knowledge-graph', graphMode, 'global', limit, minScore];
 
   const queryUrl = focusQuery.trim()
-    ? `http://127.0.0.1:8000/api/graph/focus?q=${encodeURIComponent(
+    ? `${API_BASE}/graph/focus?q=${encodeURIComponent(
         focusQuery
       )}&graph_mode=${graphMode}&min_score=${minScore}`
-    : `http://127.0.0.1:8000/api/graph?mode=${graphMode}&limit=${limit}&min_score=${minScore}`;
+    : `${API_BASE}/graph?mode=${graphMode}&limit=${limit}&min_score=${minScore}`;
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey,

@@ -227,7 +227,7 @@ export default function PlantsExplorer() {
               <label className="mb-2 block text-sm font-semibold text-primary-900">
                 Endemism
               </label>
-              <select
+              <select disabled title="Endemic annotations are not available in this data release"
                 value={
                   filters.endemic === undefined
                     ? ''
@@ -247,7 +247,7 @@ export default function PlantsExplorer() {
                 }}
                 className="input"
               >
-                <option value="">All plants</option>
+                <option value="">Endemic status unavailable</option>
                 <option value="true">Endemic only</option>
                 <option value="false">Non-endemic</option>
               </select>

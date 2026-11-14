@@ -3,7 +3,7 @@ import { Activity } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function PathwaysExplorer() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['pathways'],
     queryFn: () => api.pathways.list({}),
   });
@@ -15,7 +15,7 @@ export default function PathwaysExplorer() {
         <p className="text-gray-600 mt-1">Explore biological pathways and mechanisms</p>
       </div>
 
-      {isLoading ? (
+      {isError ? <p role="alert" className="card">The data service could not be reached. This does not establish that records are absent.</p> : data?.available === false ? <p className="card">{data.note}</p> : isLoading ? (
         <div className="text-center py-12 text-gray-500">Loading pathways...</div>
       ) : data?.data?.length === 0 ? (
         <div className="card text-center py-12 text-gray-500">

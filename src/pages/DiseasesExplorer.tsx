@@ -4,7 +4,7 @@ import { Activity } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function DiseasesExplorer() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['diseases'],
     queryFn: () => api.diseases.list({}),
   });
@@ -16,7 +16,7 @@ export default function DiseasesExplorer() {
         <p className="text-gray-600 mt-1">Explore disease associations with compounds and plants</p>
       </div>
 
-      {isLoading ? (
+      {isError ? <p role="alert" className="card">The data service could not be reached. This does not establish that records are absent.</p> : data?.available === false ? <p className="card">{data.note}</p> : isLoading ? (
         <div className="text-center py-12 text-gray-500">Loading diseases...</div>
       ) : data?.data?.length === 0 ? (
         <div className="card text-center py-12 text-gray-500">

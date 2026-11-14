@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from database import get_db
+from backend.database import get_db
 
 router = APIRouter()
 
@@ -34,8 +34,10 @@ def try_execute(query):
     try:
         result = query.execute()
         return result.data if result.data else []
-    except Exception:
-        return []
+    except Exception as exc:
+        if getattr(exc, "code", None) in {"PGRST205", "42P01"}:
+            return []  # A known optional legacy table is not installed.
+        raise HTTPException(status_code=503, detail="Transcriptomic evidence could not be loaded; a source error is not missing biological evidence.") from exc
 
 
 def get_lincs_compound_name(row: Dict[str, Any]) -> Optional[str]:

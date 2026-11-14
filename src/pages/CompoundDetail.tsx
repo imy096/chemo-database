@@ -16,10 +16,17 @@ import {
   XCircle,
   ExternalLink,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, API_BASE } from '../lib/api';
 
 type CompoundBasic = {
   compound_id: string;
+  data_quality?: {
+    pubchem_candidate_count?: number;
+    comptox_candidate_count?: number;
+    identity_hold?: boolean;
+    identity_hold_reason?: string;
+    annotation_status?: string;
+  };
   compound_name_raw?: string | null;
   compound_name_normalized?: string | null;
   pubchem_cid?: string | number | null;
@@ -43,7 +50,7 @@ type CompoundBasic = {
   }>;
 };
 
-type ApiListResponse<T> = { data: T[] };
+type ApiListResponse<T> = { data: T[]; status?: string; message?: string; quality_summary?: { source_rows?: number; displayed_rows?: number; withheld_rows?: number } };
 
 type NPClassificationRow = {
   np_pathway?: string | null;
@@ -69,6 +76,7 @@ type ChemblRow = {
   target_organism?: string | null;
   assay_chembl_id?: string | null;
   standard_type?: string | null;
+  standard_relation?: string | null;
   standard_value?: number | null;
   standard_units?: string | null;
   pchembl_value?: number | null;
@@ -173,6 +181,7 @@ function normalizeForCompare(value?: string | null) {
 }
 
 function getCompoundImageUrl(compound?: CompoundBasic | null) {
+  if (compound?.data_quality?.identity_hold || (compound?.data_quality?.pubchem_candidate_count || 0) > 1) return null;
   if (!compound?.compound_id) return null;
   const id = compound.compound_id;
   const idLower = id.toLowerCase();
@@ -407,7 +416,7 @@ export default function CompoundDetail() {
   const structureQuery = useQuery<ApiListResponse<StructureFileRow>>({
     queryKey: ['compound-structure-files', compoundId],
     queryFn: async () => {
-      const baseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
+      const baseUrl = API_BASE;
       const response = await fetch(`${baseUrl}/compounds/${encodeURIComponent(compoundId)}/structure-files`);
       if (!response.ok) throw new Error('Failed to fetch structure files');
       return response.json();
@@ -427,6 +436,7 @@ export default function CompoundDetail() {
   const targetRows = unwrapArray(targetQuery.data);
   const metaboliteContextRows = unwrapArray(metaboliteContextQuery.data);
   const structureRows = unwrapArray(structureQuery.data);
+
 
 
   const firstChemblId = useMemo(() => compound?.chembl_ids?.split(/[;,\s]+/).find(Boolean) || chemblRows[0]?.molecule_chembl_id || null, [compound?.chembl_ids, chemblRows]);
@@ -449,6 +459,18 @@ export default function CompoundDetail() {
   return (
     <div className="min-h-screen bg-stone-50">
       <div className="mx-auto max-w-7xl px-5 py-8">
+        {compound.data_quality?.identity_hold && (
+          <div role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+            <strong>Chemical identity requires review.</strong> {compound.data_quality.identity_hold_reason}
+            <p className="mt-2">The disputed structure and associated bioactivity are withheld from the main record. Original source records are preserved for curation.</p>
+          </div>
+        )}
+        {((compound.data_quality?.pubchem_candidate_count || 0) > 1 || (compound.data_quality?.comptox_candidate_count || 0) > 1) && (
+          <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4">This catalogue entry has competing annotation records. A single structure or property value is not selected until they are resolved.</p>
+        )}
+        {[npQuery,nmrQuery,chemblQuery,keggQuery,lincsQuery,geoQuery,toxicityQuery,targetQuery,metaboliteContextQuery,structureQuery].some((query) => query.isError) && (
+          <p role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4">Some evidence sections could not be loaded. An empty section should not be interpreted as absence of evidence while a source request has failed.</p>
+        )}
         <div className="mb-6 flex items-center gap-2 text-sm text-stone-500">
           <Link to="/compounds" className="hover:text-emerald-700">Compounds</Link>
           <ChevronRight className="h-4 w-4" />
@@ -514,6 +536,7 @@ export default function CompoundDetail() {
             {compound.plants?.length ? <div className="space-y-3">{compound.plants.map((plant, index) => <div key={`${plant.plant_id || plant.plant_name_raw || 'plant'}-${index}`} className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><p className="font-semibold text-stone-800">{plant.plant_name_raw || 'Unnamed plant'}</p><p className="mt-1 text-sm text-stone-600">{[plant.family, plant.genus, plant.species].filter(Boolean).join(' / ') || 'Taxonomy not available'}</p></div>)}</div> : <EmptyState text="No plant source records found." />}
           </CollapsibleSection>
 
+          {structureQuery.data?.status === "withheld_identity_review" && <p className="rounded-xl bg-amber-50 p-4 text-amber-900">{structureQuery.data.message}</p>}
           <CollapsibleSection title="Structure files" icon={<Box className="h-5 w-5 text-emerald-700" />} defaultOpen={structureRows.length > 0}>
             {structureRows.length ? (
               <div className="space-y-3">
@@ -555,8 +578,12 @@ export default function CompoundDetail() {
             {nmrRows.length ? <div className="space-y-3">{nmrRows.map((row, index) => <div key={index} className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-stone-800">{row.solvent || 'Solvent not available'} {row.frequency ? `- ${row.frequency}` : ''}</p><ExternalAnchor href={makeDoiUrl(row.doi)}>DOI</ExternalAnchor></div><CollapsibleText label="1H NMR" value={row.proton_nmr} /><div className="mt-3"><CollapsibleText label="13C NMR" value={row.carbon_nmr} /></div><p className="mt-3 text-xs text-stone-500">Source: {row.source || 'NMRexp / literature-derived'}</p></div>)}</div> : <EmptyState />}
           </CollapsibleSection>
 
+          <MetaboliteContextSection rows={metaboliteContextRows} />
+
           <CollapsibleSection title="ChEMBL bioactivity" icon={<Microscope className="h-5 w-5 text-emerald-700" />}>
-            {chemblRows.length ? <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Target</th><th className="px-3 py-2">Assay</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Value</th><th className="px-3 py-2">pChEMBL</th></tr></thead><tbody>{chemblRows.map((row, index) => <tr key={index} className="border-t border-stone-200"><td className="px-3 py-3"><p className="font-medium text-stone-800">{row.target_pref_name || row.target_chembl_id || 'Not available'}</p><p className="text-xs text-stone-500">{row.target_organism}</p></td><td className="px-3 py-3">{row.assay_chembl_id || '-'}</td><td className="px-3 py-3">{row.standard_type || '-'}</td><td className="px-3 py-3">{row.standard_value ?? '-'} {row.standard_units || ''}</td><td className="px-3 py-3">{row.pchembl_value ?? '-'}</td></tr>)}</tbody></table></div> : <EmptyState />}
+            <p className="mb-3 text-sm text-stone-600">These source records passed formatting checks; experimental validity and catalogue identity require separate review. Missing measurements remain unknown.</p>
+            {Boolean(chemblQuery.data?.quality_summary?.withheld_rows) && <p className="mb-3 text-sm text-amber-800">{chemblQuery.data?.quality_summary?.withheld_rows} source rows are withheld because of formatting or identity/linkage issues. They have been preserved.</p>}
+            {chemblRows.length ? <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="text-xs uppercase text-stone-500"><tr><th className="px-3 py-2">Target</th><th className="px-3 py-2">Assay</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Value</th><th className="px-3 py-2">pChEMBL</th></tr></thead><tbody>{chemblRows.map((row, index) => <tr key={index} className="border-t border-stone-200"><td className="px-3 py-3"><p className="font-medium text-stone-800">{row.target_pref_name || row.target_chembl_id || 'Not available'}</p><p className="text-xs text-stone-500">{row.target_organism}</p></td><td className="px-3 py-3">{row.assay_chembl_id || '-'}</td><td className="px-3 py-3">{row.standard_type || '-'}</td><td className="px-3 py-3">{row.standard_relation || ''} {row.standard_value ?? '-'} {row.standard_units || ''}</td><td className="px-3 py-3">{row.pchembl_value ?? '-'}</td></tr>)}</tbody></table></div> : <EmptyState />}
           </CollapsibleSection>
 
           <CollapsibleSection title="Predicted / mapped targets" icon={<Network className="h-5 w-5 text-emerald-700" />}>

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
-from database import get_db
+from backend.database import get_db
+from backend.query_helpers import fetch_up_to, literal_search
 
 router = APIRouter()
 
@@ -78,7 +79,7 @@ def build_compound_target_graph(rows: list[dict]) -> dict:
 
     for row in rows:
         compound_id = row.get("compound_id")
-        compound_label = row.get("compound_id") or compound_id
+        compound_label = row.get("compound_name_raw") or compound_id
 
         target_label = row.get("gene_name") or row.get("target_external_id")
         target_external_id = row.get("target_external_id")
@@ -89,11 +90,7 @@ def build_compound_target_graph(rows: list[dict]) -> dict:
         if not compound_id or not target_label:
             continue
 
-        target_id = (
-            f"target::{row.get('gene_name')}"
-            if row.get("gene_name")
-            else f"target::{target_external_id}"
-        )
+        target_id = f"target::{target_external_id}" if target_external_id else f"target::{row.get('gene_name')}::{row.get('target_species') or 'unknown'}"
 
         if compound_id not in compound_nodes:
             compound_nodes[compound_id] = {
@@ -164,7 +161,7 @@ def row_matches_exact_compound_target(row: dict, query: str) -> bool:
     compound_id = normalize_text(row.get("compound_id"))
     gene_name = normalize_text(row.get("gene_name"))
     target_external_id = normalize_text(row.get("target_external_id"))
-    return query in {compound_id, gene_name, target_external_id}
+    return query in {compound_id, normalize_text(row.get("compound_name_raw")), gene_name, target_external_id}
 
 
 def row_matches_partial_compound_target(row: dict, query: str) -> bool:
@@ -252,8 +249,8 @@ async def get_knowledge_graph(
 
         if mode == "compound_target":
             result = (
-                db.table("compound_target_interaction")
-                .select("compound_id,target_external_id,gene_name,score,action,mode")
+                db.table("v_compound_target")
+                .select("compound_id,compound_name_raw,target_external_id,target_species,gene_name,score,action,mode")
                 .gte("score", min_score)
                 .limit(limit)
                 .execute()
@@ -304,18 +301,16 @@ async def get_focused_graph(
         query = normalize_text(q)
 
         if graph_mode == "compound_target":
-            result = (
-                db.table("compound_target_interaction")
-                .select("compound_id,target_external_id,gene_name,score,action,mode")
-                .gte("score", min_score)
-                .limit(pool_limit)
-                .execute()
-            )
-
-            rows = result.data or []
+            value = literal_search(q)
+            def query_factory():
+                return (db.table("v_compound_target")
+                    .select("*", count="exact")
+                    .or_(f"compound_id.ilike.{value},compound_name_raw.ilike.{value},gene_name.ilike.{value},target_external_id.ilike.{value}")
+                    .gte("score", min_score).order("interaction_id"))
+            rows, total = fetch_up_to(query_factory, pool_limit)
             exact_rows = [row for row in rows if row_matches_exact_compound_target(row, query)]
             partial_rows = [row for row in rows if row_matches_partial_compound_target(row, query)]
-            matched_rows = exact_rows if exact_rows else partial_rows
+            matched_rows = exact_rows if exact_rows else rows
 
             graph = build_compound_target_graph(matched_rows)
             graph["meta"]["limit"] = pool_limit
@@ -325,6 +320,8 @@ async def get_focused_graph(
             graph["meta"]["query_normalized"] = query
             graph["meta"]["match_strategy"] = "exact" if exact_rows else "partial"
             graph["meta"]["matched_rows"] = len(matched_rows)
+            graph["meta"]["candidate_rows"] = total
+            graph["meta"]["truncated"] = total is not None and total > len(rows)
             graph["meta"]["min_score"] = min_score
             graph["meta"]["description"] = (
                 "Focus mode shows the matched compound or target and its direct compound-target neighborhood."
@@ -332,14 +329,13 @@ async def get_focused_graph(
             graph["meta"].update(collect_match_metadata_compound_target(matched_rows, query))
             return graph
 
-        result = (
-            db.table("plant_compound")
-            .select("plant_id,plant_name_raw,compound_id,compound_name_raw")
-            .limit(pool_limit)
-            .execute()
-        )
-
-        rows = result.data or []
+        value = literal_search(q)
+        def query_factory():
+            return (db.table("plant_compound")
+                .select("*", count="exact")
+                .or_(f"plant_id.ilike.{value},plant_name_raw.ilike.{value},compound_id.ilike.{value},compound_name_raw.ilike.{value}")
+                .order("plant_compound_id"))
+        rows, total = fetch_up_to(query_factory, pool_limit)
         exact_rows = [row for row in rows if row_matches_exact_plant_compound(row, query)]
         partial_rows = [row for row in rows if row_matches_partial_plant_compound(row, query)]
         matched_rows = exact_rows if exact_rows else partial_rows
@@ -352,6 +348,8 @@ async def get_focused_graph(
         graph["meta"]["query_normalized"] = query
         graph["meta"]["match_strategy"] = "exact" if exact_rows else "partial"
         graph["meta"]["matched_rows"] = len(matched_rows)
+        graph["meta"]["candidate_rows"] = total
+        graph["meta"]["truncated"] = total is not None and total > len(rows)
         graph["meta"]["description"] = (
             "Focus mode shows the matched plant or compound and its direct plant-compound neighborhood."
         )
