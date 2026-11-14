@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useMemo, useState } from 'react';
 import {
   Database,
@@ -139,7 +140,7 @@ function CodeBlock({
 }
 
 export default function DataAccess() {
-  const baseUrl = 'http://127.0.0.1:8000';
+  const baseUrl = API_BASE.replace(/\/api$/, '');
 
   const endpointGroups: EndpointGroup[] = useMemo(
     () => [
