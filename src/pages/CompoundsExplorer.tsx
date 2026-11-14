@@ -5,6 +5,7 @@ import { FlaskConical, Filter, Search, Sparkles } from 'lucide-react';
 import { api } from '../lib/api';
 
 type CompoundRow = {
+  data_quality?: { identity_hold?: boolean; pubchem_candidate_count?: number };
   compound_id: string;
   compound_name_raw?: string | null;
   compound_name_normalized?: string | null;
@@ -38,6 +39,7 @@ function normalizeForCompare(value?: string | null) {
 }
 
 function getCompoundImageUrl(compound?: CompoundRow | null) {
+  if (compound?.data_quality?.identity_hold || (compound?.data_quality?.pubchem_candidate_count || 0) > 1) return null;
   if (!compound?.compound_id) return null;
 
   const id = compound.compound_id;
