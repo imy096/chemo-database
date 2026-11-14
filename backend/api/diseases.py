@@ -1,56 +1,23 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
-from database import get_db
-
-router = APIRouter()
+from fastapi import APIRouter, HTTPException
+router=APIRouter()
+NOTE='A curated disease-association dataset is not installed in this data release. Missing associations are unknown, not negative results.'
 
 @router.get("/")
-async def get_diseases(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-    category: Optional[str] = None
-):
-    db = get_db()
+def list_records():
+    return {"data":[],"available":False,"note":NOTE}
 
-    query = db.table("disease").select("*")
+@router.get("/{record_id}")
+def get_record(record_id:str):
+    raise HTTPException(404,NOTE)
 
-    if category:
-        query = query.eq("category", category)
+@router.get("/{record_id}/compounds")
+def get_compounds(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}
 
-    result = query.range(skip, skip + limit - 1).execute()
+@router.get("/{record_id}/plants")
+def get_plants(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}
 
-    return {
-        "data": result.data,
-        "count": len(result.data),
-        "skip": skip,
-        "limit": limit
-    }
-
-@router.get("/{disease_id}")
-async def get_disease_detail(disease_id: str):
-    db = get_db()
-
-    result = db.table("disease").select("*").eq("disease_id", disease_id).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Disease not found")
-
-    return result.data[0]
-
-@router.get("/{disease_id}/compounds")
-async def get_disease_compounds(disease_id: str):
-    db = get_db()
-
-    result = db.table("compound_disease").select(
-        "*, compound(*, compound_synonym(*))"
-    ).eq("disease_id", disease_id).execute()
-
-    return {"data": result.data}
-
-@router.get("/{disease_id}/plants")
-async def get_disease_plants(disease_id: str):
-    db = get_db()
-
-    result = db.rpc("get_disease_plants", {"p_disease_id": disease_id}).execute()
-
-    return {"data": result.data if result.data else []}
+@router.get("/{record_id}/genes")
+def get_genes(record_id:str):
+    return {"data":[],"available":False,"note":NOTE}

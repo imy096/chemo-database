@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from database import get_db
+from backend.database import get_db
 
 router = APIRouter()
 
@@ -56,7 +56,9 @@ async def get_plants(
     try:
         db = get_db()
 
-        query = db.table("plant_taxon").select("*")
+        if endemic is not None or region:
+            raise HTTPException(status_code=422, detail="Endemic and region filters are not available in the current plant-taxonomy release.")
+        query = db.table("plant_taxon").select("*", count="exact")
 
         if q:
             query = query.ilike("plant_name_raw", f"%{q}%")
@@ -81,9 +83,12 @@ async def get_plants(
         return {
             "data": plants,
             "count": len(plants),
+            "total_count": result.count,
             "skip": skip,
             "limit": limit
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

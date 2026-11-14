@@ -1,16 +1,18 @@
 from fastapi import APIRouter, HTTPException
-from database import get_db
+from backend.database import get_db
 
 router = APIRouter()
 
 
 def safe_exact_count(db, table_name: str, id_column: str) -> int:
     try:
-        result = db.table(table_name).select(id_column, count="exact").execute()
-        return result.count or 0
+        result = db.table(table_name).select(id_column, count="exact", head=True).execute()
+        if result.count is None:
+            raise RuntimeError("The source did not return an exact count")
+        return result.count
     except Exception as e:
         print(f"Exact count failed for {table_name}.{id_column}: {e}")
-        return 0
+        raise HTTPException(status_code=503, detail=f"The count for {table_name} is unavailable; it has not been replaced with zero.")
 
 
 def safe_rpc_rows(db, function_name: str, limit: int | None = None) -> list:
@@ -22,7 +24,7 @@ def safe_rpc_rows(db, function_name: str, limit: int | None = None) -> list:
         return result.data or []
     except Exception as e:
         print(f"RPC rows failed for {function_name}: {e}")
-        return []
+        raise HTTPException(status_code=503, detail=f"The report {function_name} is unavailable.")
 
 
 def safe_gap_summary_map(db) -> dict[str, int]:
@@ -45,7 +47,7 @@ def safe_gap_summary_map(db) -> dict[str, int]:
         print(f"Gap summary view read failed: {e}")
 
     # 3) Last resort: return empty dict, caller can fallback
-    return {}
+    raise HTTPException(status_code=503, detail="Coverage summaries could not be loaded. Coverage has not been inferred from missing results.")
 
 
 @router.get("/coverage")
@@ -244,6 +246,8 @@ async def get_database_stats():
         return {
             "plant_taxon": safe_exact_count(db, "plant_taxon", "plant_id"),
             "compound": safe_exact_count(db, "compound", "compound_id"),
+            "target": safe_exact_count(db, "v_target_summary", "target_key"),
+            "reference_records": safe_exact_count(db, "reference", "reference_id"),
             "plant_compound": safe_exact_count(
                 db, "plant_compound", "plant_compound_id"
             ),

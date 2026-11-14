@@ -5,7 +5,7 @@ import io
 import os
 from pathlib import Path
 
-from database import get_db
+from backend.database import get_db
 from supabase import create_client
 import openpyxl
 
@@ -63,16 +63,7 @@ TEMPLATE_SPECS = {
 
 
 def get_storage_client():
-    supabase_url = os.getenv("SUPABASE_URL")
-    service_role_key = (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        or os.getenv("SUPABASE_SERVICE_KEY")
-    )
-
-    if not supabase_url or not service_role_key:
-        raise RuntimeError("Missing Supabase storage credentials.")
-
-    return create_client(supabase_url, service_role_key)
+    return get_db()
 
 
 def normalize_columns(columns: List[str]) -> List[str]:
