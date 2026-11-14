@@ -1,3 +1,4 @@
+import { API_BASE } from '../lib/api';
 import { useState } from 'react';
 import { Bot, Send, Sparkles, User, FlaskConical, Target, Leaf } from 'lucide-react';
 
@@ -34,7 +35,7 @@ export default function ChatAssistant() {
     setLoading(true);
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/chat', {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
