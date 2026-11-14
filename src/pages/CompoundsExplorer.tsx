@@ -167,7 +167,7 @@ export default function CompoundsExplorer() {
     [filters]
   );
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['compounds', activeFilters],
     queryFn: () => api.compounds.list(activeFilters),
   });
@@ -242,6 +242,12 @@ export default function CompoundsExplorer() {
       {/* Content */}
       {isLoading ? (
         <div className="py-12 text-center text-gray-500">Loading compounds...</div>
+      ) : isError ? (
+        <div role="alert" className="card border border-red-200 bg-red-50 p-6 text-red-900">
+          <p className="font-semibold">The compound list could not be loaded.</p>
+          <p className="mt-2 text-sm">{error instanceof Error ? error.message : 'Please retry when the data service is available.'}</p>
+          <button type="button" onClick={() => { void refetch(); }} className="mt-4 rounded bg-teal-700 px-4 py-2 text-white">Retry</button>
+        </div>
       ) : data?.data?.length === 0 ? (
         <div className="card py-12 text-center text-gray-500">
           No compounds found matching your criteria
