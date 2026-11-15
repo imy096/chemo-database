@@ -30,7 +30,7 @@ def get_publication_related_data(reference_id:str):
     # These are evidence-level reference links, not measured plant-compound
     # occurrences or molecular interactions.
     result={"reference_id":reference_id}
-    for key,table in [("plant_evidence","plant_attribute_reference_link"),("genus_evidence","genus_attribute_reference_link"),("family_evidence","metabolite_family_reference_link")]:
+    for key,table in [("plant_evidence","plant_attribute_reference_link"),("genus_evidence","genus_attribute_reference_link"),("family_evidence","v_metabolite_family_reference_resolved")]:
         result[key]=fetch_all(lambda t=table:db.table(t).select("*",count="exact").eq("reference_id",reference_id).order("reference_id"))
     return result
 
